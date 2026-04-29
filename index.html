@@ -535,5 +535,63 @@ function setText(id,val){
 
 initMap();
 </script>
+<script>
+window.addEventListener("load",()=>{
+  setTimeout(()=>{
+    setText("warnTitle","Başlat butonuna bas");
+    setText("warnText","GPS izni için ▶ BAŞLAT'a bas. GPS gecikirse pilot veri açılır.");
+    setText("warnMeta","V8.1 hotfix aktif");
+  },500);
+});
+
+function forcePilotScan(){
+  if(!currentLat||!currentLng){
+    currentLat=38.6191;
+    currentLng=27.4289;
+    speedKmh=0;
+    currentHeading=0;
+    currentLimit=50;
+    currentRoadType="Pilot Manisa";
+    updateRoadCursor();
+    updateSpeedLimitUI();
+    map.setView([currentLat,currentLng],13,{animate:true});
+  }
+  scanNow();
+}
+
+const oldStartBot=startBot;
+startBot=function(){
+  setText("gpsState","GPS İZNİ BEKLENİYOR");
+  setText("warnTitle","GPS izni isteniyor");
+  setText("warnText","Konum izni penceresi çıkarsa izin ver. Çıkmazsa pilot veri açılır.");
+  setText("warnMeta","10 saniye GPS bekleniyor");
+
+  let gpsDone=false;
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+    gpsDone=true;
+    oldStartBot();
+  },err=>{
+    setText("gpsState","GPS ALINAMADI");
+    forcePilotScan();
+  },{enableHighAccuracy:true,maximumAge:0,timeout:9000});
+
+  setTimeout(()=>{
+    if(!gpsDone&&(!currentLat||!currentLng)){
+      setText("gpsState","GPS GECİKTİ");
+      forcePilotScan();
+    }
+  },10000);
+};
+
+setTimeout(()=>{
+  if(!currentLat||!currentLng){
+    forcePilotScan();
+  }
+},2500);
+</script>
+
+
 </body>
 </html>
+
