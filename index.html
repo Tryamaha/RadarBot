@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#08111c">
+<title>RadarBot TR Safety</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#08111c;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+#map{position:fixed;inset:0;z-index:1}
+
+.glass{
+ background:linear-gradient(135deg,rgba(24,28,42,.88),rgba(11,14,24,.78));
+ backdrop-filter:blur(16px);
+ -webkit-backdrop-filter:blur(16px);
+ border:1px solid rgba(255,255,255,.07);
+ box-shadow:0 8px 24px rgba(0,0,0,.34)
+}
+
+.topBar{
+ position:fixed;
+ z-index:20;
+ top:calc(env(safe-area-inset-top) + 10px);
+ left:12px;right:12px;
+ border-radius:22px;
+ padding:12px 14px;
+ display:flex;justify-content:space-between;align-items:center;
+}
+.brand{
+ font-size:21px;
+ font-weight:900;
+ color:#39ddff;
+}
+.live{
+ font-size:12px;
+ font-weight:900;
+ color:#00ffa0;
+}
+
+.alertCard{
+ position:fixed;
+ z-index:20;
+ left:12px;right:12px;
+ top:calc(env(safe-area-inset-top) + 78px);
+ border-radius:20px;
+ padding:14px;
+}
+.alertTitle{font-size:18px;font-weight:900;color:#ffcf4a}
+.alertSub{font-size:14px;margin-top:4px;color:#eef3fb}
+.alertMeta{font-size:12px;margin-top:8px;color:#aeb8cc}
+
+.centerPulse{
+ position:fixed;
+ z-index:15;
+ left:50%;top:50%;
+ transform:translate(-50%,-50%);
+ width:26px;height:26px;border-radius:50%;
+ background:#00eaff;
+ border:4px solid rgba(255,255,255,.85);
+ box-shadow:0 0 25px rgba(0,234,255,.7);
+}
+
+.bottomDock{
+ position:fixed;
+ z-index:25;
+ left:10px;right:10px;
+ bottom:10px;
+ border-radius:26px;
+ padding:10px;
+ display:grid;
+ grid-template-columns:repeat(4,1fr);
+ gap:8px;
+}
+.dockBtn{
+ border:none;
+ border-radius:16px;
+ padding:12px 4px;
+ color:#fff;
+ font-size:12px;
+ font-weight:900;
+ background:rgba(255,255,255,.05);
+}
+.dockBtn.main{background:linear-gradient(90deg,#18d8ff,#1868ff)}
+.dockBtn.on{box-shadow:0 0 0 2px rgba(0,255,180,.3) inset}
+
+.drawer{
+ position:fixed;
+ left:12px;right:12px;
+ bottom:96px;
+ z-index:40;
+ border-radius:24px;
+ padding:14px;
+ display:none;
+ max-height:46vh;
+ overflow:auto;
+}
+.drawerHead{
+ display:flex;justify-content:space-between;align-items:center;margin-bottom:12px
+}
+.drawerTitle{font-size:18px;font-weight:900}
+.drawerClose{
+ width:42px;height:42px;border:none;border-radius:50%;
+ background:#b8224a;color:#fff;font-size:24px
+}
+
+.listItem{
+ padding:12px;
+ border-bottom:1px solid rgba(255,255,255,.06);
+}
+
+.ctrl2{
+ width:100%;border:none;border-radius:15px;
+ padding:13px;color:#fff;font-weight:900;font-size:14px;
+ margin-top:10px;background:rgba(255,255,255,.06)
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="topBar glass">
+  <div class="brand">RadarBot TR Safety</div>
+  <div class="live" id="gpsState">GPS BEKLENİYOR</div>
+</div>
+
+<div class="alertCard glass">
+  <div class="alertTitle" id="warnTitle">Canlı güvenlik taraması hazır</div>
+  <div class="alertSub" id="warnText">Türkiye geneli trafik, olay, tehlike ve hız noktaları taranıyor.</div>
+  <div class="alertMeta" id="warnMeta">Mesafe -- • Risk --</div>
+</div>
+
+<div class="centerPulse"></div>
+<div class="bottomDock glass">
+  <button class="dockBtn main" onclick="startBot()">▶ BAŞLAT</button>
+  <button class="dockBtn" onclick="scanNow()">🔄 TARA</button>
+  <button class="dockBtn on" id="trafficBtn" onclick="toggleTraffic()">🚦 TRAFİK</button>
+  <button class="dockBtn" onclick="openDrawer('listDrawer')">📋 LİSTE</button>
+
+  <button class="dockBtn" onclick="openDrawer('mapDrawer')">🗺️ HARİTA</button>
+  <button class="dockBtn" onclick="centerMe()">⌖ KONUM</button>
+  <button class="dockBtn" onclick="toggleVoice()">🔊 SES</button>
+  <button class="dockBtn" onclick="openDrawer('infoDrawer')">ℹ️ BİLGİ</button>
+</div>
+
+<div class="drawer glass" id="listDrawer">
+  <div class="drawerHead">
+    <div class="drawerTitle">📋 Yakındaki Güvenlik Noktaları</div>
+    <button class="drawerClose" onclick="closeDrawer('listDrawer')">×</button>
+  </div>
+  <div id="alertList">Henüz tarama yok.</div>
+</div>
+
+<div class="drawer glass" id="mapDrawer">
+  <div class="drawerHead">
+    <div class="drawerTitle">🗺️ Harita Tipi</div>
+    <button class="drawerClose" onclick="closeDrawer('mapDrawer')">×</button>
+  </div>
+  <button class="ctrl2" onclick="setBaseLayer('classic')">Klasik</button>
+  <button class="ctrl2" onclick="setBaseLayer('satellite')">Uydu</button>
+  <button class="ctrl2" onclick="setBaseLayer('dark')">Gece</button>
+</div>
+
+<div class="drawer glass" id="infoDrawer">
+  <div class="drawerHead">
+    <div class="drawerTitle">ℹ️ Kullanım Notu</div>
+    <button class="drawerClose" onclick="closeDrawer('infoDrawer')">×</button>
+  </div>
+  <div class="listItem">
+    Bu uygulama; canlı trafik, yol çalışması, kaza, kapanma, okul, yaya geçidi ve haritada kamuya açık güvenlik noktalarını gösterir.
+  </div>
+  <div class="listItem">
+    Sürüş güvenliği içindir. Hız sınırlarına ve trafik kurallarına uy.
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+const TOMTOM_KEY="EBqQEtO3y8XtbjCXFuxwqBOLocMz0xrW";
+
+let map,baseLayer,trafficLayer,markerLayer,userMarker,watchId=null;
+let currentLat=null,currentLng=null;
+let botActive=false,voiceEnabled=true,trafficEnabled=true;
+let safetyPoints=[],lastScan=0,lastVoice=0;
+
+const tileLayers={
+  classic:"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  satellite:"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  dark:"https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+};
+
+function initMap(){
+  map=L.map("map",{zoomControl:false}).setView([39.0,35.0],6);
+  setBaseLayer("classic");
+
+  trafficLayer=L.tileLayer(
+    "https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key="+TOMTOM_KEY,
+    {maxZoom:20,opacity:.62}
+  ).addTo(map);
+
+  markerLayer=L.layerGroup().addTo(map);
+}
+
+function setBaseLayer(type){
+  if(baseLayer)map.removeLayer(baseLayer);
+  baseLayer=L.tileLayer(tileLayers[type],{maxZoom:20,attribution:""}).addTo(map);
+  if(trafficLayer&&trafficEnabled)trafficLayer.addTo(map);
+  closeDrawer("mapDrawer");
+}
+
+function openDrawer(id){
+  closeAllDrawers();
+  document.getElementById(id).style.display="block";
+}
+
+function closeDrawer(id){
+  document.getElementById(id).style.display="none";
+}
+
+function closeAllDrawers(){
+  ["listDrawer","mapDrawer","infoDrawer"].forEach(closeDrawer);
+}
+
+function toggleTraffic(){
+  trafficEnabled=!trafficEnabled;
+  if(trafficEnabled){
+    trafficLayer.addTo(map);
+    document.getElementById("trafficBtn").classList.add("on");
+  }else{
+    map.removeLayer(trafficLayer);
+    document.getElementById("trafficBtn").classList.remove("on");
+  }
+}
+
+function toggleVoice(){
+  voiceEnabled=!voiceEnabled;
+  speak(voiceEnabled?"Sesli uyarılar açık.":"Sesli uyarılar kapalı.");
+}
+function startBot(){
+  if(!navigator.geolocation){
+    alert("GPS desteklenmiyor.");
+    return;
+  }
+
+  botActive=true;
+  setText("gpsState","GPS ARANIYOR...");
+  speak("RadarBot güvenli sürüş modu başladı.");
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+    currentLat=pos.coords.latitude;
+    currentLng=pos.coords.longitude;
+    updateUserMarker();
+    map.setView([currentLat,currentLng],15,{animate:true});
+    scanNow();
+  },()=>{
+    setText("gpsState","GPS İZNİ GEREKLİ");
+  },{enableHighAccuracy:true,maximumAge:0,timeout:12000});
+
+  if(watchId!==null)return;
+
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    currentLat=pos.coords.latitude;
+    currentLng=pos.coords.longitude;
+    updateUserMarker();
+    analyzeNearest();
+
+    if(Date.now()-lastScan>70000)scanNow();
+  },()=>{
+    setText("gpsState","GPS İZNİ GEREKLİ");
+  },{enableHighAccuracy:true,maximumAge:1000,timeout:10000});
+}
+
+function updateUserMarker(){
+  setText("gpsState","GPS CANLI");
+
+  if(!userMarker){
+    userMarker=L.marker([currentLat,currentLng],{
+      icon:L.divIcon({
+        html:`<div style="width:28px;height:28px;border-radius:50%;background:#00eaff;border:4px solid white;box-shadow:0 0 22px #00eaff"></div>`,
+        className:"",
+        iconSize:[28,28],
+        iconAnchor:[14,14]
+      })
+    }).addTo(map);
+  }else{
+    userMarker.setLatLng([currentLat,currentLng]);
+  }
+}
+
+async function scanNow(){
+  if(!currentLat||!currentLng){
+    startBot();
+    return;
+  }
+
+  lastScan=Date.now();
+  setText("warnTitle","Canlı tarama yapılıyor");
+  setText("warnText","Yakındaki güvenlik ve trafik noktaları kontrol ediliyor...");
+  setText("warnMeta","Lütfen bekle");
+
+  await Promise.all([
+    loadOpenSafetyPoints(currentLat,currentLng),
+    loadTomTomIncidents(currentLat,currentLng)
+  ]);
+
+  drawPoints();
+  renderAlertList();
+  analyzeNearest();
+}
+
+async function loadOpenSafetyPoints(lat,lng){
+  const d=0.09;
+
+  const q=`[out:json][timeout:25];(
+    node["highway"="speed_camera"](${lat-d},${lng-d},${lat+d},${lng+d});
+    node["highway"="traffic_signals"](${lat-d},${lng-d},${lat+d},${lng+d});
+    node["highway"="crossing"](${lat-d},${lng-d},${lat+d},${lng+d});
+    node["amenity"="school"](${lat-d},${lng-d},${lat+d},${lng+d});
+    node["amenity"="fuel"](${lat-d},${lng-d},${lat+d},${lng+d});
+    node["railway"="level_crossing"](${lat-d},${lng-d},${lat+d},${lng+d});
+  );out;`;
+
+  try{
+    const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
+    const j=await r.json();
+
+    const pts=(j.elements||[]).map(n=>{
+      let type="danger",note="Güvenlik noktası",limit=50,icon="⚠️";
+
+      if(n.tags?.highway==="speed_camera"){type="camera";note="Sabit kamera / hız kontrol noktası";icon="📷";}
+      if(n.tags?.highway==="traffic_signals"){type="signal";note="Trafik ışığı";icon="🚦";}
+      if(n.tags?.highway==="crossing"){type="crossing";note="Yaya geçidi";limit=30;icon="🚶";}
+      if(n.tags?.amenity==="school"){type="school";note="Okul bölgesi";limit=30;icon="🎓";}
+      if(n.tags?.amenity==="fuel"){type="fuel";note="Benzinlik / mola noktası";icon="⛽";}
+      if(n.tags?.railway==="level_crossing"){type="rail";note="Hemzemin geçit";limit=30;icon="🚆";}
+
+      return {
+        source:"OSM",
+        name:n.tags?.name||note,
+        lat:n.lat,
+        lng:n.lon,
+        type,
+        note,
+        limit,
+        icon
+      };
+    });
+
+    mergePoints(pts);
+  }catch(e){}
+}
+
+async function loadTomTomIncidents(lat,lng){
+  const d=0.12;
+  const bbox=`${lng-d},${lat-d},${lng+d},${lat+d}`;
+
+  const url=`https://api.tomtom.com/traffic/services/5/incidentDetails?key=${TOMTOM_KEY}&bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description,code},from,to,length,delay}}}&language=tr-TR&timeValidityFilter=present`;
+
+  try{
+    const r=await fetch(url);
+    const j=await r.json();
+
+    const incidents=j.incidents||[];
+
+    const pts=incidents.map(i=>{
+      const coords=i.geometry?.coordinates;
+      let lng2,lat2;
+
+      if(Array.isArray(coords?.[0])){
+        lng2=coords[0][0];
+        lat2=coords[0][1];
+      }else{
+        lng2=coords?.[0];
+        lat2=coords?.[1];
+      }
+
+      const desc=i.properties?.events?.[0]?.description||"Canlı trafik olayı";
+      const delay=i.properties?.delay||0;
+      const mag=i.properties?.magnitudeOfDelay||0;
+
+      return {
+        source:"TomTom",
+        name:desc,
+        lat:lat2,
+        lng:lng2,
+        type:"incident",
+        note:`Canlı trafik olayı • gecikme ${Math.round(delay/60)} dk`,
+        limit:50,
+        icon:mag>=3?"🚨":"🚧"
+      };
+    }).filter(p=>p.lat&&p.lng);
+
+    mergePoints(pts);
+  }catch(e){}
+}
+
+function mergePoints(pts){
+  const all=[...safetyPoints,...pts];
+  const seen=new Set();
+
+  safetyPoints=all.filter(p=>{
+    const key=p.type+"-"+p.lat.toFixed(5)+"-"+p.lng.toFixed(5);
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function drawPoints(){
+  markerLayer.clearLayers();
+
+  safetyPoints.forEach(p=>{
+    const color=
+      p.type==="camera"?"#7c4dff":
+      p.type==="school"?"#2878ff":
+      p.type==="crossing"?"#00c853":
+      p.type==="fuel"?"#00b894":
+      p.type==="incident"?"#ff1744":
+      p.type==="signal"?"#ffb300":"#ff7043";
+
+    const icon=L.divIcon({
+      html:`<div style="width:32px;height:32px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 0 12px ${color}">${p.icon}</div>`,
+      className:"",
+      iconSize:[32,32],
+      iconAnchor:[16,16]
+    });
+
+    L.marker([p.lat,p.lng],{icon})
+      .addTo(markerLayer)
+      .bindPopup(`<b>${p.name}</b><br>${p.note}<br>Kaynak: ${p.source}`);
+  });
+}
+
+function renderAlertList(){
+  const box=document.getElementById("alertList");
+
+  if(!safetyPoints.length){
+    box.innerHTML="Yakında nokta bulunamadı.";
+    return;
+  }
+
+  const sorted=[...safetyPoints]
+    .map(p=>({...p,dist:distanceMeters(currentLat,currentLng,p.lat,p.lng)}))
+    .sort((a,b)=>a.dist-b.dist)
+    .slice(0,12);
+
+  box.innerHTML="";
+
+  sorted.forEach(p=>{
+    const div=document.createElement("div");
+    div.className="listItem";
+    div.innerHTML=`
+      <b>${p.icon} ${p.name}</b><br>
+      <span style="color:#aeb8cc">${p.note}</span><br>
+      <span style="color:#39ddff">${Math.round(p.dist)} m • ${p.source}</span>
+    `;
+    box.appendChild(div);
+  });
+}
+
+function analyzeNearest(){
+  if(!currentLat||!currentLng||!safetyPoints.length)return;
+
+  let best=null;
+  let bd=Infinity;
+
+  safetyPoints.forEach(p=>{
+    const d=distanceMeters(currentLat,currentLng,p.lat,p.lng);
+    if(d<bd){
+      bd=d;
+      best=p;
+    }
+  });
+
+  const risk=
+    bd<250?90:
+    bd<500?70:
+    bd<1000?45:
+    bd<1800?25:10;
+
+  setText("warnTitle",`${best.icon} ${best.name}`);
+  setText("warnText",best.note);
+  setText("warnMeta",`Mesafe ${Math.round(bd)} m • Risk ${risk}/100 • Kaynak ${best.source}`);
+
+  if(voiceEnabled&&risk>=70&&Date.now()-lastVoice>25000){
+    lastVoice=Date.now();
+    speak(`${best.name} yaklaşıyor. Dikkatli ilerleyin.`);
+  }
+}
+
+function centerMe(){
+  if(currentLat&&currentLng)map.setView([currentLat,currentLng],15,{animate:true});
+}
+
+function distanceMeters(a,b,c,d){
+  const R=6371000;
+  const dA=(c-a)*Math.PI/180;
+  const dB=(d-b)*Math.PI/180;
+
+  const x=
+    Math.sin(dA/2)**2+
+    Math.cos(a*Math.PI/180)*
+    Math.cos(c*Math.PI/180)*
+    Math.sin(dB/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function speak(text){
+  if(!voiceEnabled||!("speechSynthesis" in window))return;
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang="tr-TR";
+  u.rate=.95;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+function setText(id,val){
+  const e=document.getElementById(id);
+  if(e)e.innerText=val;
+}
+
+initMap();
+</script>
+</body>
+</html>
